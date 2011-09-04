@@ -13,13 +13,14 @@ Max WP Version: 3.1.2
  */
 
 
-require_once(dirname(__FILE__).'/ww_gpx.php');
+// Include helper
+require_once(dirname(__FILE__).'/ww_gpx_helper.php');
 
 if (! defined('GPX2CHART_SHORTCODE')) define('GPX2CHART_SHORTCODE','gpx2chart');
 
 class GPX2CHART {
 
-    static $container_name='GPX2CHART_CONTAINER';
+    static $container_name='GPX2CHART';
     static $default_rendername='flot';
 	static $add_script;
 
@@ -36,19 +37,30 @@ class GPX2CHART {
 		add_shortcode(GPX2CHART_SHORTCODE, array(__CLASS__, 'handle_shortcode'));
 
         self::$add_script=0;
-
         if (self::$debug) {
+            wp_register_script('highcharts', plugins_url('/js/highcharts/highcharts.src.js',__FILE__), array('jquery'), '2.1.4', false);
+   	        wp_register_script('highchartsexport', plugins_url('/js/highcharts/modules/exporting.js',__FILE__), array('jquery','highcharts'), '2.1.4', false);
+
             wp_register_script('excanvas', plugins_url('/js/flot/excanvas.js',__FILE__), array('jquery'), '2.1.4', false);
             wp_register_script('flot', plugins_url('/js/flot/jquery.flot.js',__FILE__), array('jquery'), '2.1.4', false);
             wp_register_script('flotcross', plugins_url('/js/flot/jquery.flot.crosshair.js',__FILE__), array('jquery','flot'), '2.1.4', false);
             wp_register_script('flotaxis', plugins_url('/js/flot-axislabels/jquery.flot.axislabels.js',__FILE__), array('jquery','flot'), '2.1.4', false);
+            wp_register_script('flotnavigate', plugins_url('/js/flot/jquery.flot.navigate.js',__FILE__), array('jquery','flot'), '2.1.4', false);
+            wp_register_script('flotselection', plugins_url('/js/flot/jquery.flot.selection.js',__FILE__), array('jquery','flot'), '2.1.4', false);
+            wp_register_script('strftime', "http://hacks.bluesmoon.info/strftime/strftime.js",__FILE__) ;
         } else {
+            wp_register_script('highcharts', plugins_url('/js/highcharts/highcharts.js',__FILE__), array('jquery'), '2.1.4', false);
+    	    wp_register_script('highchartsexport', plugins_url('/js/highcharts/modules/exporting.js',__FILE__), array('jquery','highcharts'), '2.1.4', false);
+
             wp_register_script('excanvas', plugins_url('/js/flot/excanvas.min.js',__FILE__), array('jquery'), '2.1.4', false);
             wp_register_script('flot', plugins_url('/js/flot/jquery.flot.min.js',__FILE__), array('jquery'), '2.1.4', false);
             wp_register_script('flotcross', plugins_url('/js/flot/jquery.flot.crosshair.min.js',__FILE__), array('jquery','flot'), '2.1.4', false);
             wp_register_script('flotaxis', plugins_url('/js/flot-axislabels/jquery.flot.axislabels.js',__FILE__), array('jquery','flot'), '2.1.4', false);
+            wp_register_script('flotnavigate', plugins_url('/js/flot/jquery.flot.navigate.js',__FILE__), array('jquery','flot'), '2.1.4', false);
+            wp_register_script('flotselection', plugins_url('/js/flot/jquery.flot.selection.js',__FILE__), array('jquery','flot'), '2.1.4', false);
+            wp_register_script('strftime', "http://hacks.bluesmoon.info/strftime/strftime.js",__FILE__) ;
         }
-
+        wp_enqueue_style('GPX2CHART', plugins_url('css/gpx2chart.css',__FILE__), false, '1.0.0', 'screen');
 	}
 
 
@@ -69,21 +81,36 @@ class GPX2CHART {
     	self::$add_script++;
 
         /* Check if we are in "debug mode". Create a more verbose output then */
-        self::$debug=in_array('debug',$atts);
+        self::$debug=self::$debug ? self::$debug : in_array('debug',$atts);
 
         $divno=self::$add_script;
 
+ 
         $error=array();
         $container=self::$container_name.$divno;
         $directcontent='';
-        $postcontent='';
+        if ($divno==1) {
+            $directcontent.=self::basicscript();
+        }
 
         $directcontent.=self::debug(var_export ($atts,true),"Attributes");
 
-        $rendername=array_key_exists('render',$atts) ? $atts['render'] : self::$default_rendername;
-        $rendername=in_array($rendername, array('flot','highcharts')) ? 'render_'.$rendername : 'render_'.self::$default_rendername;
 
-        if (! class_exists($rendername)) require_once(dirname(__FILE__)."/$rendername.php");
+        /* Scan for available rendering engines */
+        $dh  = opendir(dirname(__FILE__).'/render');
+        $engines=array();
+        while (false !== ($filename = readdir($dh))) {
+            /* Skip meta-Directories */
+            if (substr($filename,0,1) == '.') continue;
+            $engines[] = basename($filename,'.php');
+        }
+        $directcontent.=self::debug(var_export($engines,true),"Engines");
+
+        $rendername=array_key_exists('render',$atts) ? $atts['render'] : self::$default_rendername;
+        $rendername=in_array($rendername, $engines) ? $rendername : self::$default_rendername;
+
+        if (! class_exists($rendername)) require_once(dirname(__FILE__)."/render/$rendername.php");
+        $rendername='render_'.$rendername;
         $render=new $rendername();
 
         foreach ($render->script_depencies as $depency) wp_print_scripts($depency);
@@ -108,32 +135,32 @@ class GPX2CHART {
         if ((count($error)==0) and (! $gpx->parse())) array_push($error,"Error parsing GPX-File");
 
         /* In case of errors we abort here */
-        if (count($error)>0) return $directcontent.join("<br/>\n",$error)."</div>";
+        if (count($error)>0) return $directcontent."<div class='gpx2charterror'>".join("<br/>\n",$error)."</div></div>";
+
+        # Input series provided by GPX-files are: 
+        #                                               (time, lat, lon) heartrate, cadence, elevation 
+        # Calculated series are:                        
+        #                                               speed, distance, interval, rise, fall
+        # Series that make sense to be displayed as graph: 
+        #                                               heartrate, cadence, elevation, speed
+        # Series that make sense to be displayed additional in the meta-data: 
+        #                                               time, totaldistance, totalinterval, totalrise, totalfall
 
         $colors['heartrate']='#AA4643';
         $colors['cadence']='#4572A7';
         $colors['elevation']='#89A54E';
         $colors['speed']='#CACA00';
+        $colors['time']='#000000';
+
+        $colors['totaldistance']='#000000';
+        $colors['totalinterval']='#000000';
+        $colors['totalrise']='#000000';
+        $colors['totalfall']='#000000';
    
         $axistitle['heartrate']='Heartrate (bpm)';
         $axistitle['cadence']='Cadence (rpm)';
         $axistitle['elevation']='Elevation (m)';
         $axistitle['speed']='Speed (km/h)';
-
-        $axisleft['heartrate']=true;
-        $axisleft['cadence']=true;
-        $axisleft['elevation']=false;
-        $axisleft['speed']=false;
-
-        $jsvar['heartrate']="data[$divno]['hrs']";
-        $jsvar['cadence']="data[$divno]['cadence']";
-        $jsvar['elevation']="data[$divno]['elevation']";
-        $jsvar['speed']="data[$divno]['speed']";
-        $jsvar['xAxis']="data[$divno]['xAxis']";
-        $jsvar['totaldistance']="data[$divno]['totaldistance']";
-        $jsvar['totalinterval']="data[$divno]['totalinterval']";
-        $jsvar['lat']="data[$divno]['lat']";
-        $jsvar['lon']="data[$divno]['lon']";
 
         $seriesname['heartrate']='Heartrate';
         $seriesname['cadence']='Cadence';
@@ -141,23 +168,56 @@ class GPX2CHART {
         $seriesname['speed']='Speed';
         $seriesname['distance']='Distance';
         $seriesname['time']='Time';
+        $seriesname['totaldistance']='Distance';
+        $seriesname['totalinterval']='Time';
+        $seriesname['totalrise']='Rise';
+        $seriesname['totalfall']='Fall';
+        $seriesname['lat']='Latitude';
+        $seriesname['lon']='Longitude';
 
-        $seriesunit['heartrate']='bpm';
-        $seriesunit['cadence']='rpm';
-        $seriesunit['elevation']='m';
-        $seriesunit['speed']='km/h';
-        $seriesunit['distance']='km';
-        $seriesunit['time']='h';
+        $axisleft['heartrate']=true;
+        $axisleft['cadence']=true;
+        $axisleft['elevation']=false;
+        $axisleft['speed']=false;
 
+        $jsvar['xAxis']="gpx2chartdata[$divno]['xAxis']";
+
+        $jsvar['heartrate']="gpx2chartdata[$divno]['heartrate']";
+        $jsvar['cadence']="gpx2chartdata[$divno]['cadence']";
+        $jsvar['elevation']="gpx2chartdata[$divno]['elevation']";
+        $jsvar['speed']="gpx2chartdata[$divno]['speed']";
+
+        $jsvar['totaldistance']="gpx2chartdata[$divno]['totaldistance']";
+        $jsvar['totalinterval']="gpx2chartdata[$divno]['totalinterval']";
+        $jsvar['totalrise']="gpx2chartdata[$divno]['totalrise']";
+        $jsvar['totalfall']="gpx2chartdata[$divno]['totalfall']";
+        $jsvar['lat']="gpx2chartdata[$divno]['lat']";
+        $jsvar['lon']="gpx2chartdata[$divno]['lon']";
+
+        # Formatter for Axis-Labels
         $formatter['heartrate']='return value.toFixed(axis.tickDecimals) + "bpm";';
         $formatter['cadence']='return value.toFixed(axis.tickDecimals) + "rpm";';
         $formatter['elevation']='return value.toFixed(axis.tickDecimals) + "m";';
-        $formatter['speed']='return value.toFixed(axis.tickDecimals) + "km/h";';
+        $formatter['speed']='return value.toFixed(axis.tickDecimals);';
         $formatter['distance']='return value.toFixed(axis.tickDecimals) + "km";';
         $formatter['time']='return value.toFixed(axis.tickDecimals) + "h";';
 
+        # Formatter for Tooltip-Values
+        $labelformat['heartrate']='return value + " bpm";';
+        $labelformat['cadence']='return value + " rpm";';
+        $labelformat['elevation']='return Math.round(value) + " m";';
+        $labelformat['speed']='return Math.round(value*100)/100 + " km/h";';
+        $labelformat['totaldistance']='if (value>1000) return Math.round(value/10)/100 + " km"; return Math.round(value) + " m"';
+        $labelformat['totalinterval']='return Math.floor(value/3600) + ":"+Math.floor(value/60)%60+":"+value%60;';
+        $labelformat['totalrise']='if (value>1000) return Math.round(value/10)/100 + " km"; return Math.round(value) + " m"';
+        $labelformat['totalfall']='if (value>1000) return Math.round(value/10)/100 + " km"; return Math.round(value) + " m"';
+
         $dashstyle['heartrate']='shortdot';
         $seriestype['elevation']='areaspline';
+
+        # Adjust the display of elevation a little bit, so the graph does not look to rough if we don't have high differences between min and max
+        # In this case we have at least 40m that are displayed
+        $additionalparameters['elevation']='min: '.($gpx->min('elevation')-20).',max: '.($gpx->max('elevation')+20).',';
 
         $params=array('heartrate','cadence','elevation','speed');
         foreach ($params as $param) {
@@ -184,25 +244,8 @@ class GPX2CHART {
         $title = $gpx->meta->name;
         $subtitle=strftime('%d.%m.%Y %H:%M',$gpx[0]['time'])."-".strftime('%d.%m.%Y %H:%M',$gpx[-1]['time']);
 
-        $directcontent.='<script type="text/javascript">'."
-           if (! data) {
-               var data=new Array();
-           }
-           data[$divno]=new Array();
-        ";
-
         $gpx->setmaxelem($maxelem);
 #       $gpx->setmaxelem(0);
-        foreach ($process as $elem) {
-           $directcontent.=$jsvar[$elem]."= new Array(".join(",",$gpx->return_pair($elem) ).");\n";
-        }
-        $directcontent.=$jsvar['totaldistance']."={".join(",",$gpx->return_assoc('totaldistance'))."};\n";
-        $directcontent.=$jsvar['totalinterval']."={".join(",",$gpx->return_assoc('totalinterval') )."};\n";
-
-        $directcontent.=$jsvar['lat']."={".join(",",$gpx->return_assoc('lat') )."};\n";
-        $directcontent.=$jsvar['lon']."={".join(",",$gpx->return_assoc('lon') )."};\n";
-
-        $directcontent.="</script>\n";
 
         $met=array();
         foreach ($metadata as $elem) {
@@ -230,21 +273,12 @@ class GPX2CHART {
         }
         $metadata=join(' ',$met);
 
-        $directcontent.=<<<EOT
-            <div id="${container}chart" style="width:576px;height:300px" class="gpx2chartchart"></div>
-            <div id="${container}meta" class="gpx2chartmeta"> <!-- style="-webkit-transform: rotate(90deg);-moz-transform: rotate(90deg);-ms-transform: rotate(90deg);-o-transform: rotate(90deg);transform: rotate(90deg);"> -->
-            $metadata
-            </div>
-            <div id="${container}debug" class="gpx2chartdebug" > </div>
-        </div>
-EOT;
-
         $yaxis=array();
         $series=array();
         $series_units=array();
         $series_names=array();
 
-        # We need additional entries for names and units
+       # We need additional entries for names and units
         foreach (array('time','distance') as $elem) {
             array_push($series_names,"'".$elem."':'".$seriesname[$elem]."'");
             array_push($series_units,"'".$seriesname[$elem]."':'".$seriesunit[$elem]."'");
@@ -254,63 +288,76 @@ EOT;
         $series_names = join (',',$series_names);
 #categories: $jsvar[xAxis],
 
-    $yaxis=array();
-    $series=array();
-    $series_units=array();
-    $series_names=array();
-    $axisno=1;
-    foreach ($process as $elem) {
-        array_push($yaxis,$render->create_axis($axistitle[$elem],$colors[$elem],$axisleft[$elem],$axisno,$formatter[$elem]));
-        array_push($series,$render->create_series($seriesname[$elem],$colors[$elem],$axisno,$jsvar[$elem],$dashstyle[$elem],$seriestype[$elem]));
-#        array_push($series_units,"'".$seriesname[$elem]."':'".$seriesunit[$elem]."'");
-        $axisno++;
+        $yaxis=array();
+        $series=array();
+        $series_units=array();
+        $series_names=array();
+        $axisno=1;
+        foreach ($process as $elem) {
+            array_push($yaxis,$render->create_axis($axistitle[$elem],$colors[$elem],$axisleft[$elem],$axisno,$formatter[$elem],$additionalparameters[$elem]));
+            array_push($series,$render->create_series($elem,$seriesname[$elem],$colors[$elem],$axisno,$jsvar[$elem],$dashstyle[$elem],$seriestype[$elem],$labelformat[$elem]));
+    #        array_push($series_units,"'".$seriesname[$elem]."':'".$seriesunit[$elem]."'");
+            $axisno++;
+        }
+        foreach (array('totaldistance','totalinterval','totalrise','totalfall','lat','lon') as $elem) {
+            array_push($series,$render->create_series($elem,$seriesname[$elem],$colors[$elem],-1,$jsvar[$elem],$dashstyle[$elem],$seriestype[$elem],$labelformat[$elem]));
+        }
+
+        $xaxis=array();
+        array_push($xaxis,$render->create_xaxis());
+    
+        $directcontent.='<script type="text/javascript">'."gpx2chartdata[$divno]=new Array();";
+        foreach ($process as $elem) {
+           $directcontent.=$jsvar[$elem]."= new Array(".join(",",$gpx->return_pair($elem) ).");\n";
+        }
+
+        foreach (array('totaldistance','totalinterval','totalrise','totalfall','lat','lon') as $elem) {
+           $directcontent.=$jsvar[$elem]."= new Array(".join(",",$gpx->return_pair($elem) ).");\n";
+ #           $directcontent.=$jsvar[$elem]."={".join(",",$gpx->return_assoc($elem) )."};\n";
+        }
+
+#        $directcontent.=$jsvar['totaldistance']."={".join(",",$gpx->return_assoc('totaldistance'))."};\n";
+#        $directcontent.=$jsvar['totalinterval']."={".join(",",$gpx->return_assoc('totalinterval') )."};\n";#
+
+#        $directcontent.=$jsvar['lat']."={".join(",",$gpx->return_assoc('lat') )."};\n";
+#        $directcontent.=$jsvar['lon']."={".join(",",$gpx->return_assoc('lon') )."};\n";
+        $directcontent.="</script>\n";
+
+        $directcontent.=$render->rendercontainer($container,$metadata);
+        $directcontent.=$render->renderoptions("flotoptions$divno",join(',',$xaxis),join(',',$yaxis));
+        $directcontent.=$render->renderseries("flotseries$divno",join(',',$series));
+        $directcontent.=$render->renderplot($container."chart","flotseries$divno","flotoptions$divno");
+        $directcontent.=$render->renderaddon($container);
+
+
+        $directcontent.="</div>";
+
+        return $directcontent;
+
     }
 
-    $directcontent.=<<<EOT
-<script type="text/javascript">
-    var flotoptions$divno={
-           grid: { hoverable: true
-           },
-           xaxes: [ { mode: 'time' } ],
-           yaxes: [
+    function basicscript() {
+    return <<<EOT
+        <!-- Initial GPX2Chart Javascript -->
+        <script type="text/javascript">
+           if (! window.gpx2chartdebug) {
+               function gpx2chartdebug(text, container) {
+                    if (console) {
+                        console.debug(text);
+                    }
+                    if (container) {
+                        jQuery(container).html(text)
+                    }
+               }
+           }
+           if (! gpx2chartdata) {
+               var gpx2chartdata=new Array();
+           }
+        </script>
 EOT;
-
-    $directcontent.=join(',',$yaxis);
-
-    $directcontent.=<<<EOT
-           ],
-           legend: { show: false, position: 'sw' },
-           crosshair: { mode: 'x' }
-};
-EOT;
-
-    $directcontent.="var flotdata$divno=[\n";
-    $directcontent.=join(',',$series);
-    $directcontent.="\n];\n";
-
-$directcontent.=<<<EOT
-    var flot$container=jQuery.plot(jQuery("#${container}chart"), flotdata$divno, flotoptions$divno);
-      jQuery("#${container}flot").bind("plothover", function (evt, position, item) {
-        text="Pos: "+position.x+ " ";
-        if (item) {
-          // Lock the crosshair to the data point being hovered
-          flot$container.lockCrosshair({ x: item.datapoint[0], y: item.datapoint[1] });
-          text=text+"Item: "+item.datapoint[0];
-        }
-        else {
-          // Return normal crosshair operation
-          flot$container.unlockCrosshair();
-        }
-        jQuery("#${container}debug").html(text)
-      })
-
-</script>
-EOT;
-
-    return $directcontent;
-
     }
- 
+
+
 }
  
 /*
