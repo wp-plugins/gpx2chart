@@ -133,7 +133,8 @@
                     clickable: false,
                     hoverable: false,
                     autoHighlight: true, // highlight in case mouse is near
-                    mouseActiveRadius: 10 // how far the mouse can be away to activate an item
+                    mouseActiveRadius: 10, // how far the mouse can be away to activate an item
+		    mouseActiveIgnoreY: false, // shall we ignore the Y-Distance when searching for datapoints
                 },
                 interaction: {
                     redrawOverlayInterval: 1000/60 // time between updates, -1 means in same flow
@@ -446,7 +447,7 @@
 
                 // vary color if needed
                 var sign = variation % 2 == 1 ? -1 : 1;
-                c.scale('rgb', 1 + sign * Math.ceil(variation / 2) * 0.2)
+                c.scale('rgb', 1 + sign * Math.ceil(variation / 2) * 0.2);
 
                 // FIXME: if we're getting to close to something else,
                 // we should probably skip this one
@@ -633,6 +634,7 @@
                 s = series[i];
                 points = s.datapoints.points,
                 ps = s.datapoints.pointsize;
+                format = s.datapoints.format;
 
                 var xmin = topSentry, ymin = topSentry,
                     xmax = bottomSentry, ymax = bottomSentry;
@@ -735,8 +737,8 @@
         
         function setupCanvases() {
             var reused,
-                existingCanvas = placeholder.children("canvas.base"),
-                existingOverlay = placeholder.children("canvas.overlay");
+                existingCanvas = placeholder.children("canvas.flot-base"),
+                existingOverlay = placeholder.children("canvas.flot-overlay");
 
             if (existingCanvas.length == 0 || existingOverlay == 0) {
                 // init everything
@@ -750,8 +752,8 @@
 
                 getCanvasDimensions();
                 
-                canvas = makeCanvas(true, "base");
-                overlay = makeCanvas(false, "overlay"); // overlay canvas for interactive features
+                canvas = makeCanvas(true, "flot-base");
+                overlay = makeCanvas(false, "flot-overlay"); // overlay canvas for interactive features
 
                 reused = false;
             }
@@ -851,51 +853,49 @@
                 axisw = opts.labelWidth || 0, axish = opts.labelHeight || 0,
                 f = axis.font;
 
-            if (opts.labelWidth == null || opts.labelHeight == null) {
-                ctx.save();
-                ctx.font = f.style + " " + f.variant + " " + f.weight + " " + f.size + "px '" + f.family + "'";
-            
-                for (var i = 0; i < ticks.length; ++i) {
-                    var t = ticks[i];
+            ctx.save();
+            ctx.font = f.style + " " + f.variant + " " + f.weight + " " + f.size + "px '" + f.family + "'";
+
+            for (var i = 0; i < ticks.length; ++i) {
+                var t = ticks[i];
+                
+                t.lines = [];
+                t.width = t.height = 0;
+
+                if (!t.label)
+                    continue;
+
+                // accept various kinds of newlines, including HTML ones
+                // (you can actually split directly on regexps in Javascript,
+                // but IE is unfortunately broken)
+                var lines = t.label.replace(/<br ?\/?>|\r\n|\r/g, "\n").split("\n");
+                for (var j = 0; j < lines.length; ++j) {
+                    var line = { text: lines[j] },
+                        m = ctx.measureText(line.text);
                     
-                    t.lines = [];
-                    t.width = t.height = 0;
+                    line.width = m.width;
+                    // m.height might not be defined, not in the
+                    // standard yet
+                    line.height = m.height != null ? m.height : f.size;
 
-                    if (!t.label)
-                        continue;
+                    // add a bit of margin since font rendering is
+                    // not pixel perfect and cut off letters look
+                    // bad, this also doubles as spacing between
+                    // lines
+                    line.height += Math.round(f.size * 0.15);
 
-                    // accept various kinds of newlines, including HTML ones
-                    // (you can actually split directly on regexps in Javascript,
-                    // but IE is unfortunately broken)
-                    var lines = t.label.replace(/<br ?\/?>|\r\n|\r/g, "\n").split("\n");
-                    for (var j = 0; j < lines.length; ++j) {
-                        var line = { text: lines[j] },
-                            m = ctx.measureText(line.text);
-                        
-                        line.width = m.width;
-                        // m.height might not be defined, not in the
-                        // standard yet
-                        line.height = m.height != null ? m.height : f.size;
+                    t.width = Math.max(line.width, t.width);
+                    t.height += line.height;
 
-                        // add a bit of margin since font rendering is
-                        // not pixel perfect and cut off letters look
-                        // bad, this also doubles as spacing between
-                        // lines
-                        line.height += Math.round(f.size * 0.15);
-
-                        t.width = Math.max(line.width, t.width);
-                        t.height += line.height;
-
-                        t.lines.push(line);
-                    }
-
-                    if (opts.labelWidth == null)
-                        axisw = Math.max(axisw, t.width);
-                    if (opts.labelHeight == null)
-                        axish = Math.max(axish, t.height);
+                    t.lines.push(line);
                 }
-                ctx.restore();
+
+                if (opts.labelWidth == null)
+                    axisw = Math.max(axisw, t.width);
+                if (opts.labelHeight == null)
+                    axish = Math.max(axish, t.height);
             }
+            ctx.restore();
 
 	    if (opts.axisLabel) {
 	                ctx.save();
@@ -946,7 +946,7 @@
                 
                 var innermost = $.inArray(axis, sameDirection) == 0;
                 if (innermost)
-                    tickLength = "full"
+                    tickLength = "full";
                 else
                     tickLength = 5;
             }
@@ -1391,7 +1391,7 @@
                     
                     // we might need an extra decimal since forced
                     // ticks don't necessarily fit naturally
-                    if (axis.mode != "time" && opts.tickDecimals == null) {
+                    if (!axis.mode && opts.tickDecimals == null) {
                         var extraDec = Math.max(0, -Math.floor(Math.log(delta) / Math.LN10) + 1),
                             ts = generator(axis);
 
@@ -1418,7 +1418,7 @@
             else if (oticks) {
                 if ($.isFunction(oticks))
                     // generate the ticks
-                    ticks = oticks({ min: axis.min, max: axis.max });
+                    ticks = oticks(axis);
                 else
                     ticks = oticks;
             }
@@ -1708,7 +1708,9 @@
                 // placeholder.append('<div style="position:absolute;opacity:0.10;background-color:red;left:' + box.left + 'px;top:' + box.top + 'px;width:' + box.width +  'px;height:' + box.height + 'px"></div>') // debug
 
                 ctx.fillStyle = axis.options.color;
-                ctx.font = f.style + " " + f.variant + " " + f.weight + " " + f.size + "px '" + f.family + "'";
+                // Important: Don't use quotes around axis.font.family! Just around single 
+                // font names like 'Times New Roman' that have a space or special character in it.
+                ctx.font = f.style + " " + f.variant + " " + f.weight + " " + f.size + "px " + f.family;
                 ctx.textAlign = "start";
                 // middle align the labels - top would be more
                 // natural, but browsers can differ a pixel or two in
@@ -1791,6 +1793,7 @@
         }
 
         function drawSeries(series) {
+		if (series.yaxis.n < 0) return;
             if (series.lines.show)
                 drawSeriesLines(series);
             if (series.bars.show)
@@ -2341,6 +2344,7 @@
             for (i = series.length - 1; i >= 0; --i) {
                 if (!seriesFilter(series[i]))
                     continue;
+                if (series[i].yaxis.n<0) continue;
                 
                 var s = series[i],
                     axisx = s.xaxis,
@@ -2368,13 +2372,13 @@
                         // For points and lines, the cursor must be within a
                         // certain distance to the data point
                         if (x - mx > maxx || x - mx < -maxx ||
-                            y - my > maxy || y - my < -maxy)
+                            (y - my > maxy || y - my < -maxy) && ! options.grid.mouseActiveIgnoreY )
                             continue;
 
                         // We have to calculate distances in pixels, not in
                         // data units, because the scales of the axes may be different
-                        var dx = Math.abs(axisx.p2c(x) - mouseX),
-                            dy = Math.abs(axisy.p2c(y) - mouseY),
+                        var dx = Math.abs(axisx.p2c(x) - mouseX);
+                            dy = options.grid.mouseActiveIgnoreY ? 0 : Math.abs(axisy.p2c(y) - mouseY);
                             dist = dx * dx + dy * dy; // we save the sqrt
 
                         // use <= to ensure last point takes precedence
@@ -2440,6 +2444,7 @@
         // trigger click or hover event (they send the same parameters
         // so we share their code)
         function triggerClickHoverEvent(eventname, event, seriesFilter) {
+
             var offset = eventHolder.offset(),
                 canvasX = event.pageX - offset.left - plotOffset.left,
                 canvasY = event.pageY - offset.top - plotOffset.top,
@@ -2447,6 +2452,7 @@
 
             pos.pageX = event.pageX;
             pos.pageY = event.pageY;
+
 
             var item = findNearbyItem(canvasX, canvasY, seriesFilter);
 
@@ -2467,11 +2473,18 @@
                         unhighlight(h.series, h.point);
                 }
                 
-                if (item)
-                    highlight(item.series, item.datapoint, eventname);
+                if (item) {
+			if (options.grid.mouseActiveIgnoreY)
+				for (i = 0; i < series.length; ++i) {
+			            highlight(i, item.dataIndex, eventname);
+				}
+			else
+				highlight(item.series, item.datapoint, eventname);
+
+		}
+
             }
-            
-            placeholder.trigger(eventname, [ pos, item ]);
+            placeholder.trigger(eventname, [ pos, item, placeholder, event ]);
         }
 
         function triggerRedrawOverlay() {
@@ -2602,7 +2615,7 @@
                     if (typeof c != "string") {
                         var co = $.color.parse(defaultColor);
                         if (c.brightness != null)
-                            co = co.scale('rgb', c.brightness)
+                            co = co.scale('rgb', c.brightness);
                         if (c.opacity != null)
                             co.a *= c.opacity;
                         c = co.toString();
