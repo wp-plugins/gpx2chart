@@ -51,7 +51,8 @@
                     position: "ne", // position of default legend container within plot
                     margin: 5, // distance from grid edge to default legend container within plot
                     backgroundColor: null, // null means auto-detect
-                    backgroundOpacity: 0.85 // set to 0 to avoid background
+                    backgroundOpacity: 0.85, // set to 0 to avoid background
+                    type: "html" // set to "canvas" to draw legend into canvas
                 },
                 xaxis: {
                     show: null, // null = auto-detect, true = always, false = never
@@ -69,6 +70,7 @@
                     tickFormatter: null, // fn: number -> string
                     labelWidth: null, // size of tick labels in pixels
                     labelHeight: null,
+                    labelAngle: null,
                     reserveSpace: null, // whether to reserve space even if axis isn't shown
                     tickLength: null, // size in pixels of ticks, or "full" for whole line
                     alignTicksWithAxis: null, // axis number or null for no sync
@@ -113,7 +115,8 @@
                         align: "left", // or "center" 
                         horizontal: false
                     },
-                    shadowSize: 3
+                    shadowSize: 3,
+                    highlightColor: null
                 },
                 grid: {
                     show: true,
@@ -134,7 +137,7 @@
                     hoverable: false,
                     autoHighlight: true, // highlight in case mouse is near
                     mouseActiveRadius: 10, // how far the mouse can be away to activate an item
-		    mouseActiveIgnoreY: false, // shall we ignore the Y-Distance when searching for datapoints
+		    mouseActiveIgnoreY: false // shall we ignore the Y-Distance when searching for datapoints
                 },
                 interaction: {
                     redrawOverlayInterval: 1000/60 // time between updates, -1 means in same flow
@@ -217,7 +220,7 @@
         setupGrid();
         draw();
         bindEvents();
-
+        insertLegend();
 
         function executeHooks(hook, args) {
             args = [plot].concat(args);
@@ -248,6 +251,10 @@
                 options.xaxis.tickColor = options.grid.tickColor;
             if (options.yaxis.tickColor == null) // backwards-compatibility
                 options.yaxis.tickColor = options.grid.tickColor;
+
+            // Transform angle in radiants
+            if (options.xaxis.labelAngle != null)
+                options.xaxis.labelAngle = (options.xaxis.labelAngle * Math.PI) / 180;
 
             if (options.grid.borderColor == null)
                 options.grid.borderColor = options.grid.color;
@@ -286,6 +293,8 @@
                 $.extend(true, options.series.bars, options.bars);
             if (options.shadowSize != null)
                 options.series.shadowSize = options.shadowSize;
+            if (options.highlightColor != null)
+                options.series.highlightColor = options.highlightColor;
 
             // save options on axes for future reference
             for (i = 0; i < options.xaxes.length; ++i)
@@ -878,6 +887,14 @@
                     // standard yet
                     line.height = m.height != null ? m.height : f.size;
 
+                    var angle = opts.labelAngle;
+                    if(angle) {
+                        var abs = Math.abs, sin = Math.sin, cos = Math.cos,
+                        w = line.width, h = line.height;
+                        line.height = abs(w * sin(angle)) + abs(h * cos(angle));
+                        line.width = abs(w * cos(angle)) + abs(h * sin(angle));
+                    }
+
                     // add a bit of margin since font rendering is
                     // not pixel perfect and cut off letters look
                     // bad, this also doubles as spacing between
@@ -1096,8 +1113,6 @@
             $.each(axes, function (_, axis) {
                 setTransformationHelpers(axis);
             });
-            
-            insertLegend();
         }
         
         function setRange(axis) {
@@ -1149,7 +1164,8 @@
             else
                 // heuristic based on the model a*sqrt(x) fitted to
                 // some data points that seemed reasonable
-                noTicks = 0.3 * Math.sqrt(axis.direction == "x" ? canvasWidth : canvasHeight);
+                // Increase factor if labels have an angle
+                noTicks = (0.3 + (opts.labelAngle ? Math.abs(Math.sin(opts.labelAngle)) * .5 : 0)) * Math.sqrt(axis.direction == "x" ? canvasWidth : canvasHeight);
 
             var delta = (axis.max - axis.min) / noTicks,
                 size, generator, unit, formatter, i, magn, norm;
@@ -1724,41 +1740,64 @@
                     if (!tick.label || tick.v < axis.min || tick.v > axis.max)
                         continue;
 
-                    var x, y, offset = 0, line;
+                    var x, y, offset = 0, line, angle;
                     for (var k = 0; k < tick.lines.length; ++k) {
                         line = tick.lines[k];
-                        
-                        if (axis.direction == "x") {
-                            x = plotOffset.left + axis.p2c(tick.v) - line.width/2;
-                            if (axis.position == "bottom")
-                                y = box.top + box.padding;
-                            else
-                                y = box.top + box.height - box.padding - tick.height;
-                        }
-                        else {
-                            y = plotOffset.top + axis.p2c(tick.v) - tick.height/2;
-                            if (axis.position == "left")
-                                x = box.left + box.width - box.padding - line.width;
-                            else
-                                x = box.left + box.padding;
-                        }
+                        angle = axis.options.labelAngle
 
-                        // account for middle aligning and line number
-                        y += line.height/2 + offset;
-                        offset += line.height;
+                        if(angle) {
+                            ctx.save();
+                            x = plotOffset.left + axis.p2c(tick.v);
+                            y = box.top + 2 * box.padding;
 
-                        if ($.browser.opera) {
-                            // FIXME: UGLY BROWSER DETECTION
-                            // round the coordinates since Opera
-                            // otherwise switches to more ugly
-                            // rendering (probably non-hinted) and
-                            // offset the y coordinates since it seems
-                            // to be off pretty consistently compared
-                            // to the other browsers
-                            x = Math.floor(x);
-                            y = Math.ceil(y - 2);
+                            var sin_angle = Math.sin(angle);
+                            var cos_angle = Math.cos(angle);
+
+                            if (sin_angle < 0 && cos_angle < 0) {
+                                x += line.width - 2*box.padding;
+                                y += line.height - 2*box.padding;
+                            } else if (sin_angle < 0 && cos_angle > 0) {
+                                x -= line.width - 2*box.padding;
+                                y += line.height - 2*box.padding;
+                            }
+
+                            ctx.translate(x, y);
+                            ctx.rotate(angle);
+                            ctx.fillText(line.text, 0, 0);
+                            ctx.restore();
+                        } else {
+                            if (axis.direction == "x") {
+                                x = plotOffset.left + axis.p2c(tick.v) - line.width/2;
+                                if (axis.position == "bottom")
+                                    y = box.top + box.padding;
+                                else
+                                    y = box.top + box.height - box.padding - tick.height;
+                            }
+                            else {
+                                y = plotOffset.top + axis.p2c(tick.v) - tick.height/2;
+                                if (axis.position == "left")
+                                    x = box.left + box.width - box.padding - line.width;
+                                else
+                                    x = box.left + box.padding;
+                            }
+
+                            // account for middle aligning and line number
+                            y += line.height/2 + offset;
+                            offset += line.height;
+
+                            if ($.browser.opera) {
+                                // FIXME: UGLY BROWSER DETECTION
+                                // round the coordinates since Opera
+                                // otherwise switches to more ugly
+                                // rendering (probably non-hinted) and
+                                // offset the y coordinates since it seems
+                                // to be off pretty consistently compared
+                                // to the other browsers
+                                x = Math.floor(x);
+                                y = Math.ceil(y - 2);
+                            }
+                            ctx.fillText(line.text, x, y);
                         }
-                        ctx.fillText(line.text, x, y);
                     }
                 }
 		if (axis.options.axisLabel) {
@@ -2057,28 +2096,75 @@
         }
 
         function drawSeriesPoints(series) {
-            function plotPoints(datapoints, radius, fillStyle, offset, shadow, axisx, axisy, symbol) {
+            function plotPoints(datapoints, radius, fillStyle, offset, shadow, axisx, axisy, symbol, image) {
                 var points = datapoints.points, ps = datapoints.pointsize;
 
-                for (var i = 0; i < points.length; i += ps) {
-                    var x = points[i], y = points[i + 1];
-                    if (x == null || x < axisx.min || x > axisx.max || y < axisy.min || y > axisy.max)
-                        continue;
-                    
-                    ctx.beginPath();
-                    x = axisx.p2c(x);
-                    y = axisy.p2c(y) + offset;
-                    if (symbol == "circle")
-                        ctx.arc(x, y, radius, 0, shadow ? Math.PI : Math.PI * 2, false);
-                    else
-                        symbol(ctx, x, y, radius, shadow);
-                    ctx.closePath();
-                    
-                    if (fillStyle) {
-                        ctx.fillStyle = fillStyle;
-                        ctx.fill();
-                    }
-                    ctx.stroke();
+								if(symbol == "image") //needs work at 2815+ too
+                {	
+                	if(offset == 0) //so overlap dot doesn't get plotted
+                	{			
+	                	var img = new Image();  
+										img.src = image;
+										//img.src = '/public/img/circle.gif';
+	                	img.onload = function(){
+	                	
+		                	for (var i = 0; i < points.length; i += ps) {
+		                  
+			                  var x = points[i], y = points[i + 1];
+			                  if (x == null || x < axisx.min || x > axisx.max || y < axisy.min || y > axisy.max)
+			                      continue;   
+			                      
+			                 	//console.log(datapoints);
+														
+												//this is insane but it works											
+												//x = parseInt(axisx.p2c(x)) - parseInt(radius) - parseInt(ctx.lineWidth*2); 
+												//y = parseInt(axisy.p2c(y)) + parseInt(offset) + parseInt(radius*2) - parseInt(img.height/2) + parseInt(ctx.lineWidth*2);
+	
+												//x = parseInt(axisx.p2c(x)) - parseInt(radius) - parseInt(ctx.lineWidth*2); 
+												//y = parseInt(axisy.p2c(y)) + parseInt(offset) + parseInt(radius*2) - parseInt(img.height/2) + parseInt(ctx.lineWidth*2);
+
+												x = parseInt(axisx.p2c(x)) - parseInt(radius) - parseInt(ctx.lineWidth*2); 
+												y = parseInt(axisy.p2c(y)) + parseInt(radius*2) - parseInt(img.height/2) + parseInt(ctx.lineWidth*2);
+												
+												//console.log(offset);
+												
+												//ctx.beginPath();
+												//console.log(ctx.fillStyle);
+												
+	                      //console.log('X: ' + x + ' Y: ' + y);                
+	                      //console.log('Width: ' + img.width + ' Height: ' + img.height + ' Radius: ' + radius + ' Line Width: ' + ctx.lineWidth);                													
+	                      
+	                      //ctx.drawImage(img,x,y);
+	                      ctx.drawImage(img,x+img.width*.1,y+img.height*.1,img.width*.9,img.height*.9);
+		
+			                }			            
+									  }
+								  }
+                }
+                else
+                {																
+	                for (var i = 0; i < points.length; i += ps) {
+	                  
+	                  var x = points[i], y = points[i + 1];
+	                  if (x == null || x < axisx.min || x > axisx.max || y < axisy.min || y > axisy.max)
+	                      continue;                 
+	                                    
+	                    ctx.beginPath();
+	                  	x = axisx.p2c(x);
+	                    y = axisy.p2c(y) + offset;	 
+	                    	                                       
+	                    if (symbol == "circle")
+	                        ctx.arc(x, y, radius, 0, shadow ? Math.PI : Math.PI * 2, false);
+	                   	else
+	                        symbol(ctx, x, y, radius, shadow);
+	                    ctx.closePath();
+	                    
+	                    if (fillStyle) {
+	                        ctx.fillStyle = fillStyle;
+	                        ctx.fill();
+	                    }
+	                    ctx.stroke();
+	                }
                 }
             }
             
@@ -2106,7 +2192,7 @@
             ctx.strokeStyle = series.color;
             plotPoints(series.datapoints, radius,
                        getFillStyle(series.points, series.color), 0, false,
-                       series.xaxis, series.yaxis, symbol);
+                       series.xaxis, series.yaxis, symbol, series.image); //added image
             ctx.restore();
         }
 
@@ -2262,6 +2348,12 @@
 
             if (!options.legend.show)
                 return;
+
+            if (options.legend.type != "html") {
+              if (options.legend.type = "canvas")
+                insertLegendIntoCanvas(plot);
+              return;
+            }
             
             var fragments = [], rowStarted = false,
                 lf = options.legend.labelFormatter, s, label;
@@ -2329,6 +2421,233 @@
             }
         }
 
+        function insertLegendIntoCanvas(plot) {
+          // TEXT FUNCTIONS --- START
+          var CanvasTextFunctions = {};
+          CanvasTextFunctions.fontSize = 8;
+          CanvasTextFunctions.letters = {
+            ' ': { width: 16, points: [] },
+            '!': { width: 10, points: [[5,21],[5,7],[-1,-1],[5,2],[4,1],[5,0],[6,1],[5,2]] },
+            '"': { width: 16, points: [[4,21],[4,14],[-1,-1],[12,21],[12,14]] },
+            '#': { width: 21, points: [[11,25],[4,-7],[-1,-1],[17,25],[10,-7],[-1,-1],[4,12],[18,12],[-1,-1],[3,6],[17,6]] },
+            '$': { width: 20, points: [[8,25],[8,-4],[-1,-1],[12,25],[12,-4],[-1,-1],[17,18],[15,20],[12,21],[8,21],[5,20],[3,18],[3,16],[4,14],[5,13],[7,12],[13,10],[15,9],[16,8],[17,6],[17,3],[15,1],[12,0],[8,0],[5,1],[3,3]] },
+            '%': { width: 24, points: [[21,21],[3,0],[-1,-1],[8,21],[10,19],[10,17],[9,15],[7,14],[5,14],[3,16],[3,18],[4,20],[6,21],[8,21],[10,20],[13,19],[16,19],[19,20],[21,21],[-1,-1],[17,7],[15,6],[14,4],[14,2],[16,0],[18,0],[20,1],[21,3],[21,5],[19,7],[17,7]] },
+            '&': { width: 26, points: [[23,12],[23,13],[22,14],[21,14],[20,13],[19,11],[17,6],[15,3],[13,1],[11,0],[7,0],[5,1],[4,2],[3,4],[3,6],[4,8],[5,9],[12,13],[13,14],[14,16],[14,18],[13,20],[11,21],[9,20],[8,18],[8,16],[9,13],[11,10],[16,3],[18,1],[20,0],[22,0],[23,1],[23,2]] },
+            '\'': { width: 10, points: [[5,19],[4,20],[5,21],[6,20],[6,18],[5,16],[4,15]] },
+            '(': { width: 14, points: [[11,25],[9,23],[7,20],[5,16],[4,11],[4,7],[5,2],[7,-2],[9,-5],[11,-7]] },
+            ')': { width: 14, points: [[3,25],[5,23],[7,20],[9,16],[10,11],[10,7],[9,2],[7,-2],[5,-5],[3,-7]] },
+            '*': { width: 16, points: [[8,21],[8,9],[-1,-1],[3,18],[13,12],[-1,-1],[13,18],[3,12]] },
+            '+': { width: 26, points: [[13,18],[13,0],[-1,-1],[4,9],[22,9]] },
+            ',': { width: 10, points: [[6,1],[5,0],[4,1],[5,2],[6,1],[6,-1],[5,-3],[4,-4]] },
+            '-': { width: 26, points: [[4,9],[22,9]] },
+            '.': { width: 10, points: [[5,2],[4,1],[5,0],[6,1],[5,2]] },
+            '/': { width: 22, points: [[20,25],[2,-7]] },
+            '0': { width: 20, points: [[9,21],[6,20],[4,17],[3,12],[3,9],[4,4],[6,1],[9,0],[11,0],[14,1],[16,4],[17,9],[17,12],[16,17],[14,20],[11,21],[9,21]] },
+            '1': { width: 20, points: [[6,17],[8,18],[11,21],[11,0]] },
+            '2': { width: 20, points: [[4,16],[4,17],[5,19],[6,20],[8,21],[12,21],[14,20],[15,19],[16,17],[16,15],[15,13],[13,10],[3,0],[17,0]] },
+            '3': { width: 20, points: [[5,21],[16,21],[10,13],[13,13],[15,12],[16,11],[17,8],[17,6],[16,3],[14,1],[11,0],[8,0],[5,1],[4,2],[3,4]] },
+            '4': { width: 20, points: [[13,21],[3,7],[18,7],[-1,-1],[13,21],[13,0]] },
+            '5': { width: 20, points: [[15,21],[5,21],[4,12],[5,13],[8,14],[11,14],[14,13],[16,11],[17,8],[17,6],[16,3],[14,1],[11,0],[8,0],[5,1],[4,2],[3,4]] },
+            '6': { width: 20, points: [[16,18],[15,20],[12,21],[10,21],[7,20],[5,17],[4,12],[4,7],[5,3],[7,1],[10,0],[11,0],[14,1],[16,3],[17,6],[17,7],[16,10],[14,12],[11,13],[10,13],[7,12],[5,10],[4,7]] },
+            '7': { width: 20, points: [[17,21],[7,0],[-1,-1],[3,21],[17,21]] },
+            '8': { width: 20, points: [[8,21],[5,20],[4,18],[4,16],[5,14],[7,13],[11,12],[14,11],[16,9],[17,7],[17,4],[16,2],[15,1],[12,0],[8,0],[5,1],[4,2],[3,4],[3,7],[4,9],[6,11],[9,12],[13,13],[15,14],[16,16],[16,18],[15,20],[12,21],[8,21]] },
+            '9': { width: 20, points: [[16,14],[15,11],[13,9],[10,8],[9,8],[6,9],[4,11],[3,14],[3,15],[4,18],[6,20],[9,21],[10,21],[13,20],[15,18],[16,14],[16,9],[15,4],[13,1],[10,0],[8,0],[5,1],[4,3]] },
+            ':': { width: 10, points: [[5,14],[4,13],[5,12],[6,13],[5,14],[-1,-1],[5,2],[4,1],[5,0],[6,1],[5,2]] },
+            ';': { width: 10, points: [[5,14],[4,13],[5,12],[6,13],[5,14],[-1,-1],[6,1],[5,0],[4,1],[5,2],[6,1],[6,-1],[5,-3],[4,-4]] },
+            '<': { width: 24, points: [[20,18],[4,9],[20,0]] },
+            '=': { width: 26, points: [[4,12],[22,12],[-1,-1],[4,6],[22,6]] },
+            '>': { width: 24, points: [[4,18],[20,9],[4,0]] },
+            '≥': { width: 24, points: [[4,18],[20,12],[4,7],[-1,-1],[4,2],[20,2]] },
+            '?': { width: 18, points: [[3,16],[3,17],[4,19],[5,20],[7,21],[11,21],[13,20],[14,19],[15,17],[15,15],[14,13],[13,12],[9,10],[9,7],[-1,-1],[9,2],[8,1],[9,0],[10,1],[9,2]] },
+            '@': { width: 27, points: [[18,13],[17,15],[15,16],[12,16],[10,15],[9,14],[8,11],[8,8],[9,6],[11,5],[14,5],[16,6],[17,8],[-1,-1],[12,16],[10,14],[9,11],[9,8],[10,6],[11,5],[-1,-1],[18,16],[17,8],[17,6],[19,5],[21,5],[23,7],[24,10],[24,12],[23,15],[22,17],[20,19],[18,20],[15,21],[12,21],[9,20],[7,19],[5,17],[4,15],[3,12],[3,9],[4,6],[5,4],[7,2],[9,1],[12,0],[15,0],[18,1],[20,2],[21,3],[-1,-1],[19,16],[18,8],[18,6],[19,5]] },
+            'A': { width: 18, points: [[9,21],[1,0],[-1,-1],[9,21],[17,0],[-1,-1],[4,7],[14,7]] },
+            'B': { width: 21, points: [[4,21],[4,0],[-1,-1],[4,21],[13,21],[16,20],[17,19],[18,17],[18,15],[17,13],[16,12],[13,11],[-1,-1],[4,11],[13,11],[16,10],[17,9],[18,7],[18,4],[17,2],[16,1],[13,0],[4,0]] },
+            'C': { width: 21, points: [[18,16],[17,18],[15,20],[13,21],[9,21],[7,20],[5,18],[4,16],[3,13],[3,8],[4,5],[5,3],[7,1],[9,0],[13,0],[15,1],[17,3],[18,5]] },
+            'D': { width: 21, points: [[4,21],[4,0],[-1,-1],[4,21],[11,21],[14,20],[16,18],[17,16],[18,13],[18,8],[17,5],[16,3],[14,1],[11,0],[4,0]] },
+            'E': { width: 19, points: [[4,21],[4,0],[-1,-1],[4,21],[17,21],[-1,-1],[4,11],[12,11],[-1,-1],[4,0],[17,0]] },
+            'F': { width: 18, points: [[4,21],[4,0],[-1,-1],[4,21],[17,21],[-1,-1],[4,11],[12,11]] },
+            'G': { width: 21, points: [[18,16],[17,18],[15,20],[13,21],[9,21],[7,20],[5,18],[4,16],[3,13],[3,8],[4,5],[5,3],[7,1],[9,0],[13,0],[15,1],[17,3],[18,5],[18,8],[-1,-1],[13,8],[18,8]] },
+            'H': { width: 22, points: [[4,21],[4,0],[-1,-1],[18,21],[18,0],[-1,-1],[4,11],[18,11]] },
+            'I': { width: 8, points: [[4,21],[4,0]] },
+            'J': { width: 16, points: [[12,21],[12,5],[11,2],[10,1],[8,0],[6,0],[4,1],[3,2],[2,5],[2,7]] },
+            'K': { width: 21, points: [[4,21],[4,0],[-1,-1],[18,21],[4,7],[-1,-1],[9,12],[18,0]] },
+            'L': { width: 17, points: [[4,21],[4,0],[-1,-1],[4,0],[16,0]] },
+            'M': { width: 24, points: [[4,21],[4,0],[-1,-1],[4,21],[12,0],[-1,-1],[20,21],[12,0],[-1,-1],[20,21],[20,0]] },
+            'N': { width: 22, points: [[4,21],[4,0],[-1,-1],[4,21],[18,0],[-1,-1],[18,21],[18,0]] },
+            'O': { width: 22, points: [[9,21],[7,20],[5,18],[4,16],[3,13],[3,8],[4,5],[5,3],[7,1],[9,0],[13,0],[15,1],[17,3],[18,5],[19,8],[19,13],[18,16],[17,18],[15,20],[13,21],[9,21]] },
+            'P': { width: 21, points: [[4,21],[4,0],[-1,-1],[4,21],[13,21],[16,20],[17,19],[18,17],[18,14],[17,12],[16,11],[13,10],[4,10]] },
+            'Q': { width: 22, points: [[9,21],[7,20],[5,18],[4,16],[3,13],[3,8],[4,5],[5,3],[7,1],[9,0],[13,0],[15,1],[17,3],[18,5],[19,8],[19,13],[18,16],[17,18],[15,20],[13,21],[9,21],[-1,-1],[12,4],[18,-2]] },
+            'R': { width: 21, points: [[4,21],[4,0],[-1,-1],[4,21],[13,21],[16,20],[17,19],[18,17],[18,15],[17,13],[16,12],[13,11],[4,11],[-1,-1],[11,11],[18,0]] },
+            'S': { width: 20, points: [[17,18],[15,20],[12,21],[8,21],[5,20],[3,18],[3,16],[4,14],[5,13],[7,12],[13,10],[15,9],[16,8],[17,6],[17,3],[15,1],[12,0],[8,0],[5,1],[3,3]] },
+            'T': { width: 16, points: [[8,21],[8,0],[-1,-1],[1,21],[15,21]] },
+            'U': { width: 22, points: [[4,21],[4,6],[5,3],[7,1],[10,0],[12,0],[15,1],[17,3],[18,6],[18,21]] },
+            'V': { width: 18, points: [[1,21],[9,0],[-1,-1],[17,21],[9,0]] },
+            'W': { width: 24, points: [[2,21],[7,0],[-1,-1],[12,21],[7,0],[-1,-1],[12,21],[17,0],[-1,-1],[22,21],[17,0]] },
+            'X': { width: 20, points: [[3,21],[17,0],[-1,-1],[17,21],[3,0]] },
+            'Y': { width: 18, points: [[1,21],[9,11],[9,0],[-1,-1],[17,21],[9,11]] },
+            'Z': { width: 20, points: [[17,21],[3,0],[-1,-1],[3,21],[17,21],[-1,-1],[3,0],[17,0]] },
+            '[': { width: 14, points: [[4,25],[4,-7],[-1,-1],[5,25],[5,-7],[-1,-1],[4,25],[11,25],[-1,-1],[4,-7],[11,-7]] },
+            '\\': { width: 14, points: [[0,21],[14,-3]] },
+            ']': { width: 14, points: [[9,25],[9,-7],[-1,-1],[10,25],[10,-7],[-1,-1],[3,25],[10,25],[-1,-1],[3,-7],[10,-7]] },
+            '^': { width: 16, points: [[6,15],[8,18],[10,15],[-1,-1],[3,12],[8,17],[13,12],[-1,-1],[8,17],[8,0]] },
+            '_': { width: 16, points: [[0,-2],[16,-2]] },
+            '`': { width: 10, points: [[6,21],[5,20],[4,18],[4,16],[5,15],[6,16],[5,17]] },
+            'a': { width: 19, points: [[15,14],[15,0],[-1,-1],[15,11],[13,13],[11,14],[8,14],[6,13],[4,11],[3,8],[3,6],[4,3],[6,1],[8,0],[11,0],[13,1],[15,3]] },
+            'b': { width: 19, points: [[4,21],[4,0],[-1,-1],[4,11],[6,13],[8,14],[11,14],[13,13],[15,11],[16,8],[16,6],[15,3],[13,1],[11,0],[8,0],[6,1],[4,3]] },
+            'c': { width: 18, points: [[15,11],[13,13],[11,14],[8,14],[6,13],[4,11],[3,8],[3,6],[4,3],[6,1],[8,0],[11,0],[13,1],[15,3]] },
+            'd': { width: 19, points: [[15,21],[15,0],[-1,-1],[15,11],[13,13],[11,14],[8,14],[6,13],[4,11],[3,8],[3,6],[4,3],[6,1],[8,0],[11,0],[13,1],[15,3]] },
+            'e': { width: 18, points: [[3,8],[15,8],[15,10],[14,12],[13,13],[11,14],[8,14],[6,13],[4,11],[3,8],[3,6],[4,3],[6,1],[8,0],[11,0],[13,1],[15,3]] },
+            'f': { width: 12, points: [[10,21],[8,21],[6,20],[5,17],[5,0],[-1,-1],[2,14],[9,14]] },
+            'g': { width: 19, points: [[15,14],[15,-2],[14,-5],[13,-6],[11,-7],[8,-7],[6,-6],[-1,-1],[15,11],[13,13],[11,14],[8,14],[6,13],[4,11],[3,8],[3,6],[4,3],[6,1],[8,0],[11,0],[13,1],[15,3]] },
+            'h': { width: 19, points: [[4,21],[4,0],[-1,-1],[4,10],[7,13],[9,14],[12,14],[14,13],[15,10],[15,0]] },
+            'i': { width: 8, points: [[3,21],[4,20],[5,21],[4,22],[3,21],[-1,-1],[4,14],[4,0]] },
+            'j': { width: 10, points: [[5,21],[6,20],[7,21],[6,22],[5,21],[-1,-1],[6,14],[6,-3],[5,-6],[3,-7],[1,-7]] },
+            'k': { width: 17, points: [[4,21],[4,0],[-1,-1],[14,14],[4,4],[-1,-1],[8,8],[15,0]] },
+            'l': { width: 8, points: [[4,21],[4,0]] },
+            'm': { width: 30, points: [[4,14],[4,0],[-1,-1],[4,10],[7,13],[9,14],[12,14],[14,13],[15,10],[15,0],[-1,-1],[15,10],[18,13],[20,14],[23,14],[25,13],[26,10],[26,0]] },
+            'n': { width: 19, points: [[4,14],[4,0],[-1,-1],[4,10],[7,13],[9,14],[12,14],[14,13],[15,10],[15,0]] },
+            'o': { width: 19, points: [[8,14],[6,13],[4,11],[3,8],[3,6],[4,3],[6,1],[8,0],[11,0],[13,1],[15,3],[16,6],[16,8],[15,11],[13,13],[11,14],[8,14]] },
+            'p': { width: 19, points: [[4,14],[4,-7],[-1,-1],[4,11],[6,13],[8,14],[11,14],[13,13],[15,11],[16,8],[16,6],[15,3],[13,1],[11,0],[8,0],[6,1],[4,3]] },
+            'q': { width: 19, points: [[15,14],[15,-7],[-1,-1],[15,11],[13,13],[11,14],[8,14],[6,13],[4,11],[3,8],[3,6],[4,3],[6,1],[8,0],[11,0],[13,1],[15,3]] },
+            'r': { width: 13, points: [[4,14],[4,0],[-1,-1],[4,8],[5,11],[7,13],[9,14],[12,14]] },
+            's': { width: 17, points: [[14,11],[13,13],[10,14],[7,14],[4,13],[3,11],[4,9],[6,8],[11,7],[13,6],[14,4],[14,3],[13,1],[10,0],[7,0],[4,1],[3,3]] },
+            't': { width: 12, points: [[5,21],[5,4],[6,1],[8,0],[10,0],[-1,-1],[2,14],[9,14]] },
+            'u': { width: 19, points: [[4,14],[4,4],[5,1],[7,0],[10,0],[12,1],[15,4],[-1,-1],[15,14],[15,0]] },
+            'v': { width: 16, points: [[2,14],[8,0],[-1,-1],[14,14],[8,0]] },
+            'w': { width: 22, points: [[3,14],[7,0],[-1,-1],[11,14],[7,0],[-1,-1],[11,14],[15,0],[-1,-1],[19,14],[15,0]] },
+            'x': { width: 17, points: [[3,14],[14,0],[-1,-1],[14,14],[3,0]] },
+            'y': { width: 16, points: [[2,14],[8,0],[-1,-1],[14,14],[8,0],[6,-4],[4,-6],[2,-7],[1,-7]] },
+            'z': { width: 17, points: [[14,14],[3,0],[-1,-1],[3,14],[14,14],[-1,-1],[3,0],[14,0]] },
+            '{': { width: 14, points: [[9,25],[7,24],[6,23],[5,21],[5,19],[6,17],[7,16],[8,14],[8,12],[6,10],[-1,-1],[7,24],[6,22],[6,20],[7,18],[8,17],[9,15],[9,13],[8,11],[4,9],[8,7],[9,5],[9,3],[8,1],[7,0],[6,-2],[6,-4],[7,-6],[-1,-1],[6,8],[8,6],[8,4],[7,2],[6,1],[5,-1],[5,-3],[6,-5],[7,-6],[9,-7]] },
+            '|': { width: 8, points: [[4,25],[4,-7]] },
+            '}': { width: 14, points: [[5,25],[7,24],[8,23],[9,21],[9,19],[8,17],[7,16],[6,14],[6,12],[8,10],[-1,-1],[7,24],[8,22],[8,20],[7,18],[6,17],[5,15],[5,13],[6,11],[10,9],[6,7],[5,5],[5,3],[6,1],[7,0],[8,-2],[8,-4],[7,-6],[-1,-1],[8,8],[6,6],[6,4],[7,2],[8,1],[9,-1],[9,-3],[8,-5],[7,-6],[5,-7]] },
+            '~': { width: 24, points: [[3,6],[3,8],[4,11],[6,12],[8,12],[10,11],[14,8],[16,7],[18,7],[20,8],[21,10],[-1,-1],[3,8],[4,10],[6,11],[8,11],[10,10],[14,7],[16,6],[18,6],[20,7],[21,10],[21,12]] }
+          };
+          CanvasTextFunctions.letter = function(ch) {
+            return CanvasTextFunctions.letters[ch];
+          }
+          CanvasTextFunctions.ascent = function() {
+            return CanvasTextFunctions.fontSize;
+          }
+          CanvasTextFunctions.measure = function(str) {
+            var size = CanvasTextFunctions.fontSize;
+            var total = 0;
+            var len = str.length;
+            for (var i = 0; i < len; i++) {
+              var c = CanvasTextFunctions.letter(str.charAt(i));
+              if (c) total += c.width * size / 25.0;
+            }
+            return total;
+          }
+          CanvasTextFunctions.draw = function(ctx, x, y, str) {
+            var size = CanvasTextFunctions.fontSize;
+            var total = 0;
+            var len = str.length;
+            var mag = size / 25.0;
+            ctx.save();
+            ctx.lineCap = "round";
+            ctx.lineWidth = 2.0 * mag;
+            for (var i = 0; i < len; i++) {
+              var c = CanvasTextFunctions.letter(str.charAt(i));
+              if (!c) continue;
+              ctx.beginPath();
+              var penUp = 1;
+              var needStroke = 0;
+              for (var j = 0; j < c.points.length; j++) {
+                var a = c.points[j];
+                if (a[0] == -1 && a[1] == -1) {
+                  penUp = 1;
+                  continue;
+                }
+                if (penUp) {
+                  ctx.moveTo(x + a[0]*mag, y - a[1]*mag);
+                  penUp = false;
+                } else {
+                  ctx.lineTo( x + a[0]*mag, y - a[1]*mag);
+                }
+              }
+              ctx.stroke();
+              x += c.width*mag;
+            }
+            ctx.restore();
+            return total;
+          }
+          // TEXT FUNCTIONS --- END
+          var canvas = plot.getCanvas();
+          var ctx = canvas.getContext("2d");
+          var fillText = function(text, x, y) {return CanvasTextFunctions.draw(ctx, x, y, text);};
+          var measureText = function(text) {return CanvasTextFunctions.measure(text);};
+          var fontAscent = function() {return CanvasTextFunctions.ascent();}
+          var options = plot.getOptions();
+          var series = plot.getData();
+          var plotOffset = plot.getPlotOffset();
+          var plotHeight = plot.height();
+          var plotWidth = plot.width();
+          var lf = options.legend.labelFormatter;
+          var legendWidth = 0, legendHeight = 0;
+          var num_labels = 0;
+          var s, label;
+          // get width of legend and number of valid legend entries
+          for (var i = 0; i < series.length; ++i) {
+            s = series[i];
+            label = s.label;
+            if (!label) continue;
+            num_labels++;
+            if (lf) label = lf(label, s);
+            labelWidth = measureText(label);
+            if (labelWidth > legendWidth) legendWidth = labelWidth
+          }
+          var LEGEND_BOX_WIDTH = 22; // color box
+          var PADDING_RIGHT = 5;
+          var LEGEND_BOX_LINE_HEIGHT = 18;
+          legendWidth = legendWidth + LEGEND_BOX_WIDTH + PADDING_RIGHT;
+          legendHeight = num_labels * LEGEND_BOX_LINE_HEIGHT;
+          var x, y;
+          if (options.legend.container != null) {
+            x = $(options.legend.container).offset().left;
+            y = $(options.legend.container).offset().top;
+          } else {
+            var pos = "";
+            var p = options.legend.position;
+            var m = options.legend.margin;
+            if (m[0] == null) m = [m, m];
+            if (p.charAt(0) == "n")
+              y = Math.round(plotOffset.top + options.grid.borderWidth + m[1]);
+            else if (p.charAt(0) == "s")
+              y = Math.round(plotOffset.top + options.grid.borderWidth + plotHeight - m[0] - legendHeight);
+            if (p.charAt(1) == "e")
+              x = Math.round(plotOffset.left + options.grid.borderWidth + plotWidth - m[0] - legendWidth);
+            else if (p.charAt(1) == "w")
+              x = Math.round(plotOffset.left + options.grid.borderWidth + m[0]);
+            if (options.legend.backgroundOpacity != 0.0) {
+              var c = options.legend.backgroundColor;
+              if (c == null) c = options.grid.backgroundColor;
+              if (c && typeof c == "string") {
+                ctx.globalAlpha = options.legend.backgroundOpacity;
+                ctx.fillStyle = c;
+                ctx.fillRect(x,y,legendWidth,legendHeight);
+                ctx.globalAlpha = 1.0;
+              }
+            }
+          }
+          var posx, posy;
+          for (var i = 0; i < series.length; ++i) {
+            s = series[i];
+            label = s.label;
+            if (!label) continue;
+            if (lf) label = lf(label, s);
+            posy = y + (i * 18);
+            ctx.fillStyle = options.legend.labelBoxBorderColor;
+            ctx.fillRect(x, posy, 18, 14);
+            ctx.fillStyle = "#FFF";
+            ctx.fillRect(x+1, posy+1, 16, 12);
+            ctx.fillStyle = s.color;
+            ctx.fillRect(x+2, posy+2, 14, 10);
+            posx = x + 22;
+            posy = posy + fontAscent() + 2;
+            fillText(label, posx, posy);
+          }
+        } // insertLegendIntoCanvas --- END
 
         // interactive features
         
@@ -2572,31 +2891,91 @@
         function drawPointHighlight(series, point) {
             var x = point[0], y = point[1],
                 axisx = series.xaxis, axisy = series.yaxis;
+                highlightColor = (typeof series.highlightColor === "string") ? series.highlightColor : $.color.parse(series.color).scale('a', 0.5).toString();
             
             if (x < axisx.min || x > axisx.max || y < axisy.min || y > axisy.max)
                 return;
             
-            var pointRadius = series.points.radius + series.points.lineWidth / 2;
-            octx.lineWidth = pointRadius;
-            octx.strokeStyle = $.color.parse(series.color).scale('a', 0.5).toString();
-            var radius = 1.5 * pointRadius,
-                x = axisx.p2c(x),
-                y = axisy.p2c(y);
-            
-            octx.beginPath();
-            if (series.points.symbol == "circle")
-                octx.arc(x, y, radius, 0, 2 * Math.PI, false);
+            if(series.points.symbol == "image")
+            {
+            	console.log(series);
+            	
+            	/*
+	            var pointRadius = series.points.radius + series.points.lineWidth / 2;
+	            octx.lineWidth = pointRadius;
+	            octx.strokeStyle = $.color.parse(series.color).scale('a', 0.5).toString();
+	            var radius = 1.5 * pointRadius,
+	                x = axisx.p2c(x),
+	                y = axisy.p2c(y);
+							
+							octx.lineWidth = 10;
+	            
+	            octx.beginPath();
+
+	           	octx.arc(x, y, 40, 0, 2 * Math.PI, false);
+
+	            octx.closePath();
+	            //octx.fill(); //nope
+	            
+	            octx.stroke();
+	            */
+	        
+	            var pointRadius = series.points.radius + series.points.lineWidth / 2;
+	            octx.lineWidth = pointRadius;
+	            
+            	var img = new Image();  
+							img.src = series.image;
+							//img.src = '/public/img/circle.gif';
+            	img.onload = function(){
+          
+               	//console.log(datapoints);
+										
+								//this is insane but it works											
+								//x = parseInt(axisx.p2c(x)) - parseInt(radius) - parseInt(ctx.lineWidth*2); 
+								//y = parseInt(axisy.p2c(y)) + parseInt(offset) + parseInt(radius*2) - parseInt(img.height/2) + parseInt(ctx.lineWidth*2);
+
+								//x = parseInt(axisx.p2c(x) - parseInt(octx.lineWidth*2)); 
+								//y = parseInt(axisy.p2c(y)) - img.height/2;
+								
+								x = parseInt(axisx.p2c(x)) - parseInt(octx.lineWidth*2); 
+								y = parseInt(axisy.p2c(y)) - parseInt(img.height/2) + parseInt(octx.lineWidth*10);
+	              
+	              console.log(x);
+	              console.log(y);  
+	                
+                //ctx.drawImage(img,x,y);
+                octx.drawImage(img,x,y);
+							}
+	            
+            }
             else
-                series.points.symbol(octx, x, y, radius, false);
-            octx.closePath();
-            octx.stroke();
+            {                                           
+	            var pointRadius = series.points.radius + series.points.lineWidth / 2;
+	            octx.lineWidth = pointRadius;
+            	octx.strokeStyle = highlightColor;
+	            var radius = 1.5 * pointRadius,
+	                x = axisx.p2c(x),
+	                y = axisy.p2c(y);
+	            
+	            octx.beginPath();
+	            if (series.points.symbol == "circle")
+	                octx.arc(x, y, radius, 0, 2 * Math.PI, false);
+	            else
+	                series.points.symbol(octx, x, y, radius, false);
+	            octx.closePath();
+	            octx.stroke();
+            
+            }
         }
 
         function drawBarHighlight(series, point) {
+            var highlightColor = (typeof series.highlightColor === "string") ? series.highlightColor : $.color.parse(series.color).scale('a', 0.5).toString(),
+                fillStyle = highlightColor,
+                barLeft = series.bars.align == "left" ? 0 : -series.bars.barWidth/2;
+                
             octx.lineWidth = series.bars.lineWidth;
-            octx.strokeStyle = $.color.parse(series.color).scale('a', 0.5).toString();
-            var fillStyle = $.color.parse(series.color).scale('a', 0.5).toString();
-            var barLeft = series.bars.align == "left" ? 0 : -series.bars.barWidth/2;
+            octx.strokeStyle = highlightColor;
+            
             drawBar(point[0], point[1], point[2] || 0, barLeft, barLeft + series.bars.barWidth,
                     0, function () { return fillStyle; }, series.xaxis, series.yaxis, octx, series.bars.horizontal, series.bars.lineWidth);
         }
