@@ -7,9 +7,9 @@
 /* Function: hides ticks that are not whole numbers    */
 
 function tf_no_decimals(val, axis) {
-	var float = parseFloat(val);
-	if(float % 1 == 0)
-		return parseInt(float);
+	var floatm = parseFloat(val);
+	if(floatm % 1 == 0)
+		return parseInt(floatm);
 	else
 		return '';
 }
@@ -21,10 +21,10 @@ function tf_no_decimals(val, axis) {
 /* NOTE: This also performs the function of tf_no_decimals */
 
 function tf_nba_season_year(val, axis) {
-	var float = parseFloat(val);
-	if(float % 1 == 0)
+	var floatm = parseFloat(val);
+	if(floatm % 1 == 0)
 	{
-		var start_year = parseInt(float);
+		var start_year = parseInt(floatm);
 		return start_year + '-' + (start_year+1).toString().substring(2,4);
 	}
 	else
