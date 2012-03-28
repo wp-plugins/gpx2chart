@@ -4,7 +4,7 @@
 Plugin Name: gpx2chart
 Plugin URI: http://wwerther.de/static/gpx2chart
 Description: gpx2chart - a WP-Plugin for extracting some nice graphs from GPX-Files. Samples can be found on <a href="http://wwerther.de/static/gpx2chart">GPX2Chart plugin page</a>. Default-configuration can be done on the [<a href="options-general.php?page=gpx2chart.php">settings-page</a>].
-Version: 0.3.0
+Version: 0.3.1
 Author: Walter Werther
 Author URI: http://wwerther.de/
 Update Server: http://downloads.wordpress.org/plugin
@@ -14,7 +14,7 @@ Max WP Version: 3.3.1
 
 #
 
-define ('GPX2CHART_PLUGIN_VER','0.3.0');
+define ('GPX2CHART_PLUGIN_VER','0.3.1');
 
 // Include helper
 require_once(dirname(__FILE__).DIRECTORY_SEPARATOR.'ww_gpx_helper.php');
@@ -29,6 +29,7 @@ if (! defined('GPX2CHART_PLUGIN_URL')) define ("GPX2CHART_PLUGIN_URL", WP_PLUGIN
 if (! defined('GPX2CHART_PLUGIN_DIR')) define ("GPX2CHART_PLUGIN_DIR", WP_PLUGIN_DIR.DIRECTORY_SEPARATOR."gpx2chart".DIRECTORY_SEPARATOR);
 if (! defined('GPX2CHART_PLUGIN_ICONS_URL')) define ("GPX2CHART_PLUGIN_ICONS_URL", GPX2CHART_PLUGIN_URL."/icons/");
 if (! defined('GPX2CHART_PROFILES')) define ("GPX2CHART_PROFILES",GPX2CHART_PLUGIN_DIR."profiles".DIRECTORY_SEPARATOR);
+if (! defined('GPX2CHART_CSS_DIR')) define ("GPX2CHART_CSS_DIR",GPX2CHART_PLUGIN_DIR."css".DIRECTORY_SEPARATOR);
 if (! defined('GPX2CHART_CONTAINERPREFIX')) define ("GPX2CHART_CONTAINERPREFIX",'GPX2CHART');
 if (! defined('GPX2CHART_OPTIONS')) define ("GPX2CHART_OPTIONS",'gpx2chart_option');
 if (! defined('GPX2CHART_TEXTDOMAIN')) define ("GPX2CHART_TEXTDOMAIN",'GPX2CHART-plugin');
