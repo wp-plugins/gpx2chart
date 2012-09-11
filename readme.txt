@@ -80,8 +80,8 @@ Yes, of course! I would really appreciate this. But I'm very sorry to tell, that
 
 == Changelog ==
 
-= 0.3.3 = 
-* removed bundle with Highcharts API. Library is not compatible with GPL. SO if you need to use Highcharts please download it yourself
+= 0.3.3 =
+* removed bundle with Highcharts API. Library is not compatible with GPL. So if you need to use Highcharts please download it yourself
 
 = 0.3.2 =
 * Modified GPX-Parser to be a little bit more compatible for different type of GPX-files
@@ -138,7 +138,7 @@ Yes, of course! I would really appreciate this. But I'm very sorry to tell, that
 == Upgrade Notice ==
 
 = 0.3.3 =
-removed Highcharts bundle
+removed bundle with Highcharts API. Library is not compatible with GPL. SO if you need to use Highcharts please download it yourself
 
 = 0.3.0 =
 Complete Rewrite
