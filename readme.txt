@@ -4,8 +4,8 @@ Contributors: wwerther
 Donate link: http://wwerther.de/static/gpx2chart
 Tags: gpx, tracks, charts, Heartrate, Cadence, Elevation, Speed, Chart, Graphic
 Requires at least: 3.1.2
-Tested up to: 3.2.1
-Stable tag: 0.3.0
+Tested up to: 3.3.1
+Stable tag: 0.4.0
 
 A plugin that generates nice charts from GPX-files. It put's all information about heartrate, cadence, elevation and speed into one chart. 
 
@@ -44,6 +44,8 @@ There are a lot of optional-parameters. Almost all default-configurations can be
 * subtitle \-\> The text below the title (on the right). If not set it contains start- and end- datetime of the gpx-file.
 * maxelem \-\> Overwrite this value if you have large GPX files with many trackpoints. This reduces the array-size of the data embedded and increases the rendering time.
 * debug \-\> If this is present the PHP-module put some more information into the HTML-file
+* speed \-\> allows as value: 'speed', 'pace' or 'speed pace' to define what will be displayed. If not defined only speed will be displayed
+
 
 == Frequently Asked Questions ==
 
@@ -79,6 +81,20 @@ Yes, of course! I would really appreciate this. But I'm very sorry to tell, that
 3.  The GPX2Chart-plugin provides a lot of settings to overwrite the default behaivour.
 
 == Changelog ==
+
+= 0.4.0 =
+* updated flot-library to more recent version
+* added basic support for displaying pace
+
+= 0.3.3 =
+* removed bundle with Highcharts API. Library is not compatible with GPL. So if you need to use Highcharts please download it yourself
+
+= 0.3.2 =
+* Modified GPX-Parser to be a little bit more compatible for different type of GPX-files
+
+= 0.3.1 =
+* Added function to modify profiles and styles on option page
+* Added a function to clone profiles and styles on option page
 
 = 0.3.0 =
 * complete code rewrite
@@ -126,6 +142,12 @@ Yes, of course! I would really appreciate this. But I'm very sorry to tell, that
 * Initial version of this plugin
 
 == Upgrade Notice ==
+
+= 0.3.3 =
+removed bundle with Highcharts API. Library is not compatible with GPL. SO if you need to use Highcharts please download it yourself
+
+= 0.3.0 =
+Complete Rewrite
 
 = 0.2.0 =
 

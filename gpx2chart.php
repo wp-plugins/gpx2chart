@@ -1,10 +1,10 @@
 <?php
-// vim: set ts=4 et nu ai syntax=php indentexpr= :vim
+// vim: set ts=4 et nu ai syntax=php indentexpr= ff=unix sw=2 :vim
 /*
 Plugin Name: gpx2chart
 Plugin URI: http://wwerther.de/static/gpx2chart
-Description: gpx2chart - a WP-Plugin for extracting some nice graphs from GPX-Files. Samples can be found on <a href="http://wwerther.de/static/gpx2chart">GPX2Chart plugin page</a>. Default-configuration can be done on the [<a href="options-general.php?page=gpx2chart.php">settings-page</a>].
-Version: 0.3.0
+Description: gpx2chart - a WP-Plugin for extracting some nice graphs from GPX-Files. Samples can be found on <a href="http://wwerther.de/static/gpx2chart">GPX2Chart plugin page</a>. 
+Version: 0.4.0
 Author: Walter Werther
 Author URI: http://wwerther.de/
 Update Server: http://downloads.wordpress.org/plugin
@@ -14,7 +14,7 @@ Max WP Version: 3.3.1
 
 #
 
-define ('GPX2CHART_PLUGIN_VER','0.3.0');
+define ('GPX2CHART_PLUGIN_VER','0.4.0');
 
 // Include helper
 require_once(dirname(__FILE__).DIRECTORY_SEPARATOR.'ww_gpx_helper.php');
@@ -29,6 +29,7 @@ if (! defined('GPX2CHART_PLUGIN_URL')) define ("GPX2CHART_PLUGIN_URL", WP_PLUGIN
 if (! defined('GPX2CHART_PLUGIN_DIR')) define ("GPX2CHART_PLUGIN_DIR", WP_PLUGIN_DIR.DIRECTORY_SEPARATOR."gpx2chart".DIRECTORY_SEPARATOR);
 if (! defined('GPX2CHART_PLUGIN_ICONS_URL')) define ("GPX2CHART_PLUGIN_ICONS_URL", GPX2CHART_PLUGIN_URL."/icons/");
 if (! defined('GPX2CHART_PROFILES')) define ("GPX2CHART_PROFILES",GPX2CHART_PLUGIN_DIR."profiles".DIRECTORY_SEPARATOR);
+if (! defined('GPX2CHART_CSS_DIR')) define ("GPX2CHART_CSS_DIR",GPX2CHART_PLUGIN_DIR."css".DIRECTORY_SEPARATOR);
 if (! defined('GPX2CHART_CONTAINERPREFIX')) define ("GPX2CHART_CONTAINERPREFIX",'GPX2CHART');
 if (! defined('GPX2CHART_OPTIONS')) define ("GPX2CHART_OPTIONS",'gpx2chart_option');
 if (! defined('GPX2CHART_TEXTDOMAIN')) define ("GPX2CHART_TEXTDOMAIN",'GPX2CHART-plugin');
@@ -75,7 +76,10 @@ class GPX2CHART {
     		wp_enqueue_script('gpx2chart');
     		wp_enqueue_script('flotcross');
     		wp_enqueue_script('flotnavigate');
+    		wp_enqueue_script('flottime');
     		wp_enqueue_script('flotselection');
+    		wp_enqueue_script('flottooltip');
+    		wp_enqueue_script('flotaxislabel');
 
     		wp_enqueue_script('highcharts');
     		wp_enqueue_script('highchartsexport');
@@ -100,9 +104,11 @@ class GPX2CHART {
         wp_deregister_script('excanvas');
         wp_deregister_script('flot');
         wp_deregister_script('flotcross');
+        wp_deregister_script('flottime');
         wp_deregister_script('flotnavigate');
+        wp_deregister_script('flottooltip');
         wp_deregister_script('flotselection');
-        wp_deregister_script('flotselection');
+        wp_deregister_script('flotaxislabel');
         wp_deregister_script('gpx2chart');
 
         wp_register_script('gpx2chart', GPX2CHART_PLUGIN_URL."js/gpx2chart$minimized.js") ;
@@ -113,8 +119,11 @@ class GPX2CHART {
 
         wp_register_script('flot', GPX2CHART_PLUGIN_URL."js/flot/jquery.flot${minimized}.js", array('jquery','excanvas','strftime','sprintf'), '2.1.4', false);
         wp_register_script('flotcross', GPX2CHART_PLUGIN_URL."js/flot/jquery.flot.crosshair$minimized.js", array('jquery','flot'), '2.1.4', false);
+        wp_register_script('flottime', GPX2CHART_PLUGIN_URL."js/flot/jquery.flot.time$minimized.js", array('jquery','flot'), '2.1.4', false);
         wp_register_script('flotnavigate', GPX2CHART_PLUGIN_URL."js/flot/jquery.flot.navigate$minimized.js", array('jquery','flot'), '2.1.4', false);
+        wp_register_script('flottooltip', GPX2CHART_PLUGIN_URL."js/flot/jquery.flot.tooltip$minimized.js", array('jquery','flot'), '2.1.4', false);
         wp_register_script('flotselection', GPX2CHART_PLUGIN_URL."js/flot/jquery.flot.selection$minimized.js", array('jquery','flot'), '2.1.4', false);
+        wp_register_script('flotaxislabel', GPX2CHART_PLUGIN_URL."js/flot/jquery.flot.axislabel$minimized.js", array('jquery','flot'), '2.1.4', false);
 
         /* Only register Highcharts if library is present */
         if (file_exists(join(DIRECTORY_SEPARATOR, array(GPX2CHART_PLUGIN_DIR,'js','highcharts')))) {
@@ -133,7 +142,7 @@ class GPX2CHART {
 
 	function admin_menu($not_used){
     // place the info in the plugin settings page
-		add_options_page(__('GPX2Chart Settings',GPX2CHART_TEXTDOMAIN), __('GPX2Chart',GPX2CHART_TEXTDOMAIN), 5, basename(__FILE__), array('GPX2CHART', 'options_page_gpx'));
+		add_options_page(__('GPX2Chart Settings',GPX2CHART_TEXTDOMAIN), __('GPX2Chart',GPX2CHART_TEXTDOMAIN), 'manage_options', basename(__FILE__), array('GPX2CHART', 'options_page_gpx'));
 	}
 
     public static function options_page_gpx() {
@@ -207,6 +216,8 @@ class GPX2CHART {
             $key=str_replace('-','.',$key);
             $this->configuration[$key]=$value;
         }
+
+
         $this->configuration['headline']=array_key_exists('headline',$this->configuration) ? $this->configuration['headline'] : ucfirst($this->configuration['type']);
 
         $this->configuration['debug']=$this->debug;
@@ -278,6 +289,7 @@ class GPX2CHART {
         $jsvar['cadence']="gpx2chartdata[$divno]['cadence']";
         $jsvar['elevation']="gpx2chartdata[$divno]['elevation']";
         $jsvar['speed']="gpx2chartdata[$divno]['speed']";
+        $jsvar['pace']="gpx2chartdata[$divno]['pace']";
 
         $jsvar['totaldistance']="gpx2chartdata[$divno]['totaldistance']";
         $jsvar['totalinterval']="gpx2chartdata[$divno]['totalinterval']";
@@ -291,6 +303,7 @@ class GPX2CHART {
         $labelformat['cadence']='return value + " rpm";';
         $labelformat['elevation']='return Math.round(value) + " m";';
         $labelformat['speed']='return Math.round(value*100)/100 + " km/h";';
+        $labelformat['pace']='return Math.round(value*100)/100 + " min/km";';
         $labelformat['totaldistance']='if (value>1000) return sprintf("%.2f km",Math.round(value/10)/100); return Math.round(value) + " m"';
         $labelformat['totalinterval']='return sprintf("%02d:%02d:%02d",Math.floor(value/3600),Math.floor(value/60)%60,value%60);';
         $labelformat['totalrise']='if (value>1000) return Math.round(value/10)/100 + " km"; return Math.round(value) + " m"';
@@ -299,6 +312,7 @@ class GPX2CHART {
         # Adjust the display of elevation a little bit, so the graph does not look to rough if we don't have high differences between min and max
         # In this case we have at least 40m that are displayed
         $additionalparameters['elevation']='min: '.($gpx->min('elevation')-20).',max: '.($gpx->max('elevation')+20).',';
+        $additionalparameters['pace']='min: 0, max: '.($gpx->median('pace')+2).',';
 
         # The maximum series that are available
         # $process=array('heartrate','cadence','elevation','speed');
@@ -309,12 +323,17 @@ class GPX2CHART {
         # $metadata=$atts['metadata'] ? array_intersect($metadata,split(' ',$atts['metadata'])) : $metadata;
 
         # We remove the entries where we don't have data in our GPX-File
+        $this->configuration['speed']=explode(" ",$this->configuration['speed']);
+        $this->configuration['speed']=array_diff(Array('speed','pace'),$this->configuration['speed']);
         $this->configuration['data.embed']=explode(" ",$this->configuration['data.embed']);
         $this->configuration['data.embed.available']=array_diff($this->configuration['data.embed'],$gpx->getunavailable());
+        $this->configuration['data.embed.available']=array_diff($this->configuration['data.embed.available'],$this->configuration['speed']);
         $this->configuration['data.series']=explode(" ",$this->configuration['data.series']);
         $this->configuration['data.series.available']=array_diff($this->configuration['data.series'],$gpx->getunavailable());
+        $this->configuration['data.series.available']=array_diff($this->configuration['data.series.available'],$this->configuration['speed']);
         $this->configuration['data.yaxis.show']=explode(" ",$this->configuration['data.yaxis.show']);
         $this->configuration['data.yaxis.show.available']=array_diff($this->configuration['data.yaxis.show'],$gpx->getunavailable());
+        $this->configuration['data.yaxis.show.available']=array_diff($this->configuration['data.yaxis.show.available'],$this->configuration['speed']);
         
         $this->configuration['title'] = array_key_exists('title',$this->configuration) ? $this->configuration['title'] : $gpx->meta->name;
         $this->configuration['subtitle']=array_key_exists('subtitle',$this->configuration) ? $this->configuration['subtitle'] : strftime('%d.%m.%Y %H:%M',$gpx[0]['time'])."-".strftime('%d.%m.%Y %H:%M',$gpx[-1]['time']);
@@ -419,6 +438,18 @@ class GPX2CHART {
         switch ($matches[1]) {
             case 'configuration':
                 return 'Configuration:'.var_export ($this->configuration,true)."\nData:".join(',',array_keys($this->data))."\n";
+            break;
+
+            case 'show.speed':
+                if (! is_array($this->configuration['speed'])) return 0;
+                if (in_array('speed',$this->configuration['speed'])) return 0;
+                return 1;
+            break;
+
+            case 'show.pace':
+                if (! is_array($this->configuration['speed'])) return 0;
+                if (in_array('pace',$this->configuration['speed'])) return 0;
+                return 1;
             break;
 
             case 'calc.heartrate.avg':
@@ -530,5 +561,14 @@ if (! function_exists('add_shortcode')) {
 
 $pGPX2Chart=new GPX2CHART();
 #GPX2CHART::init();
+
+function wp_gpx2chart_plugin_actions( $links, $file ) {
+ 	if( $file == 'gpx2chart/gpx2chart.php' && function_exists( "admin_url" ) ) {
+		$settings_link = '<a href="' . admin_url( 'options-general.php?page=gpx2chart' ) . '">' . __('Settings') . '</a>';
+		array_unshift( $links, $settings_link ); // before other links
+	}
+	return $links;
+}
+add_filter( 'plugin_action_links', 'wp_gpx2chart_plugin_actions', 10, 2 )
 
 ?>
