@@ -12,10 +12,11 @@ Define Defaults for rendering the charts. These values can be overwritten by val
 #=css.inline:true
 #=type:running
 #=maxelem:0
-#=data.embed:cadence heartrate elevation speed totaldistance totalinterval totalrise totalfall lat lon
-#=data.series:cadence heartrate elevation speed totaldistance totalinterval totalrise totalfall
-#=data.yaxis.show:cadence heartrate elevation speed
+#=data.embed:cadence heartrate elevation speed pace totaldistance totalinterval totalrise totalfall lat lon
+#=data.series:cadence heartrate elevation speed pace totaldistance totalinterval totalrise totalfall
+#=data.yaxis.show:cadence heartrate elevation speed pace
 #=graph.meta.display:
+#=speed:speed
 
 ################ Dimensions
 #=container.width:90%
@@ -32,17 +33,20 @@ Define Defaults for rendering the charts. These values can be overwritten by val
 #=speed.color:#CACA00
 #=time.color:#000
 #=distance.color:#000
+#=pace.color:#DADA00
 
 ################ What unit's should be used?
 #=heartrate.unit:bpm
 #=cadence.unit:rpm
 #=elevation.unit:m
 #=speed.unit:km/h
+#=pace.unit:min/km
 
 ################ What's the name of the series in the legend?
 #=heartrate.legend.title:Heartrate
 #=cadence.legend.title:Cadence
 #=speed.legend.title:Speed
+#=pace.legend.title:Pace
 #=elevation.legend.title:Altitude
 #=distance.legend.title:Distance
 
@@ -50,6 +54,7 @@ Define Defaults for rendering the charts. These values can be overwritten by val
 #=cadence.series.name:Cadence
 #=elevation.series.name:Altitude
 #=speed.series.name:Speed
+#=pace.series.name:Pace
 #=distance.series.name:Distance
 #=time.series.name:Time
 #=totaldistance.series.name:Distance
@@ -64,25 +69,32 @@ Define Defaults for rendering the charts. These values can be overwritten by val
 #=cadence.yaxis.left:true
 #=elevation.yaxis.left:false
 #=speed.yaxis.left:true
+#=pace.yaxis.left:true
 
 ################ What labels should the axis have?
 #=heartrate.axis.title:Heartrate (bpm)
 #=cadence.axis.title:Cadence (rpm)
 #=elevation.axis.title:Altitude (m)
 #=speed.axis.title:Speed (km/h)
+#=pace.axis.title:Pace (min/km)
 
 ################ How should the ticks of the axis should be labeled?
 #=heartrate.axis.format:return value.toFixed(axis.tickDecimals) + "bpm  ";
 #=cadence.axis.format:return value.toFixed(axis.tickDecimals) + "rpm";
 #=elevation.axis.format:return value.toFixed(axis.tickDecimals) + "m";
-#=speed.axis.format:return value.toFixed(axis.tickDecimals) + "km/h";
+#=speed.axis.format:return value.toFixed(axis.tickDecimals);
 #=distance.axis.format:return value.toFixed(axis.tickDecimals) + "km";
 #=time.axis.format:return value.toFixed(axis.tickDecimals) + "h";
+#=pace.axis.format:return value.toFixed(axis.tickDecimals);
 
 #=elevation.series.type:areaspline
 #=heartrate.dash.style:shortdot
 {configuration}
 
+
+
+Speed: {show.speed}
+Pace: {show.pace}
 -->
 
 <style type="text/css" data-condition="{css.inline}" >
@@ -169,7 +181,8 @@ Define Defaults for rendering the charts. These values can be overwritten by val
         <tr data-condition="{gpx.contain.heartrate}" class="gpxheartrate" ><th>{heartrate.legend.title}</th><td>{gpx.calc.heartrate.min}</td><td>{gpx.calc.heartrate.avg}</td><td>{gpx.calc.heartrate.max}</td><td>{heartrate.unit}</td></tr>
         <tr data-condition="{gpx.contain.elevation}" class="gpxelevation" ><th>{elevation.legend.title}</th><td>{gpx.calc.elevation.min}</td><td>{gpx.calc.elevation.avg}</td><td>{gpx.calc.elevation.max}</td><td>{elevation.unit}</td></tr>
         <tr data-condition="{gpx.contain.elevation}" class="gpxelevation"><th>&nbsp;</th><td colspan="2">Rise: {gpx.stat.elevation.rise}{elevation.unit}</td><td colspan="2">Fall: {gpx.stat.elevation.fall}{elevation.unit}</td></tr>
-        <tr data-condition="{gpx.contain.speed}" class="gpxspeed" ><th>{speed.legend.title}</th><td>{gpx.calc.speed.min}</td><td>{gpx.calc.speed.avg}</td><td>{gpx.calc.speed.max}</td><td>{speed.unit}</td></tr>
+        <tr data-condition="{show.speed}=1" class="gpxspeed" ><th>{speed.legend.title}</th><td>{gpx.calc.speed.min}</td><td>{gpx.calc.speed.avg}</td><td>{gpx.calc.speed.max}</td><td>{speed.unit}</td></tr>
+        <tr data-condition="{show.pace}=1" class="gpxspeed" ><th>{pace.legend.title}</th><td>{gpx.calc.pace.min}</td><td>{gpx.calc.pace.avg}</td><td>{gpx.calc.pace.max}</td><td>{pace.unit}</td></tr>
         <tr data-condition="{gpx.contain.distance}" class="gpxdistance"><th>{distance.legend.title}</th><td>&nbsp;</td><td>&nbsp;</td><td>{gpx.stat.distance.max}</td><td>{distance.unit}</td></tr>
         <tr data-condition="{gpx.contain.time}"><th>{time.legend.title}</th><td>{gpx.calc.time.min}</td><td>&nbsp;</td><td>{gpx.calc.time.max}<td></tr>
       </tbody>
